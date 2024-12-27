@@ -224,11 +224,11 @@ impl FontSystem {
                 .into_iter()
                 .filter(|id| {
                     let contains = self.font_cache.contains_key(id);
-                    if !contains {
+                    /* if !contains {
                         unsafe {
                             self.db.make_shared_face_data(*id);
                         }
-                    }
+                    } */
                     !contains
                 })
                 .collect::<_>();
@@ -263,10 +263,10 @@ impl FontSystem {
         self.font_cache
             .entry(id)
             .or_insert_with(|| {
-                #[cfg(feature = "std")]
+                /* #[cfg(feature = "std")]
                 unsafe {
                     self.db.make_shared_face_data(id);
-                }
+                } */
                 match Font::new(&self.db, id) {
                     Some(font) => Some(Arc::new(font)),
                     None => {
@@ -373,7 +373,7 @@ impl FontSystem {
         #[cfg(not(target_arch = "wasm32"))]
         let now = std::time::Instant::now();
 
-        db.load_system_fonts();
+        // db.load_system_fonts();
 
         for source in fonts {
             db.load_font_source(source);
