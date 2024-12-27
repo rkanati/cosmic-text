@@ -43,7 +43,6 @@ monospace_fallback = []
 no_std = ["rustybuzz/libm", "hashbrown", "dep:libm"]
 shape-run-cache = []
 std = [
-    "fontdb/memmap",
     "fontdb/std",
     "rustybuzz/std",
     "sys-locale",
