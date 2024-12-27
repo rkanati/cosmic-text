@@ -148,13 +148,13 @@ impl Font {
 
         let data = match &info.source {
             fontdb::Source::Binary(data) => Arc::clone(data),
-            #[cfg(feature = "std")]
+            /* #[cfg(feature = "std")]
             fontdb::Source::File(path) => {
                 log::warn!("Unsupported fontdb Source::File('{}')", path.display());
                 return None;
             }
             #[cfg(feature = "std")]
-            fontdb::Source::SharedFile(_path, data) => Arc::clone(data),
+            fontdb::Source::SharedFile(_path, data) => Arc::clone(data), */
         };
 
         Some(Self {
