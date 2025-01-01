@@ -2,13 +2,14 @@
 
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, vec::Vec};
-use core::{cmp, fmt};
-use unicode_segmentation::UnicodeSegmentation;
-
-use crate::{
-    Affinity, Align, Attrs, AttrsList, BidiParagraphs, BorrowedWithFontSystem, BufferLine, Color,
-    Cursor, FontSystem, LayoutCursor, LayoutGlyph, LayoutLine, LineEnding, LineIter, Motion,
-    Scroll, ShapeLine, Shaping, Wrap,
+use {
+    crate::{
+        Affinity, Align, Attrs, AttrsList, BidiParagraphs, BorrowedWithFontSystem, BufferLine,
+        Color, Cursor, FontSystem, LayoutCursor, LayoutGlyph, LayoutLine, LineEnding, LineIter,
+        Motion, Scroll, ShapeLine, Shaping, Wrap,
+    },
+    core::{cmp, fmt},
+    unicode_segmentation::UnicodeSegmentation,
 };
 
 /// A line of visible text for rendering
@@ -16,6 +17,8 @@ use crate::{
 pub struct LayoutRun<'a> {
     /// The index of the original text line
     pub line_i: usize,
+    /// NOTE(rk): The index of the layout line
+    pub layout_i: usize,
     /// The original text line
     pub text: &'a str,
     /// True if the original paragraph direction is RTL
@@ -60,11 +63,8 @@ impl<'a> LayoutRun<'a> {
         }
         if let Some(x_start) = x_start {
             let x_end = x_end.expect("end of cursor not found");
-            let (x_start, x_end) = if x_start < x_end {
-                (x_start, x_end)
-            } else {
-                (x_end, x_start)
-            };
+            let (x_start, x_end) =
+                if x_start < x_end { (x_start, x_end) } else { (x_end, x_start) };
             Some((x_start, x_end - x_start))
         } else {
             None
@@ -100,13 +100,7 @@ pub struct LayoutRunIter<'b> {
 
 impl<'b> LayoutRunIter<'b> {
     pub fn new(buffer: &'b Buffer) -> Self {
-        Self {
-            buffer,
-            line_i: buffer.scroll.line,
-            layout_i: 0,
-            total_height: 0.0,
-            line_top: 0.0,
-        }
+        Self { buffer, line_i: buffer.scroll.line, layout_i: 0, total_height: 0.0, line_top: 0.0 }
     }
 }
 
@@ -118,11 +112,11 @@ impl<'b> Iterator for LayoutRunIter<'b> {
             let shape = line.shape_opt()?;
             let layout = line.layout_opt()?;
             while let Some(layout_line) = layout.get(self.layout_i) {
+                let layout_i = self.layout_i;
                 self.layout_i += 1;
 
-                let line_height = layout_line
-                    .line_height_opt
-                    .unwrap_or(self.buffer.metrics.line_height);
+                let line_height =
+                    layout_line.line_height_opt.unwrap_or(self.buffer.metrics.line_height);
                 self.total_height += line_height;
 
                 let line_top = self.line_top - self.buffer.scroll.vertical;
@@ -141,6 +135,7 @@ impl<'b> Iterator for LayoutRunIter<'b> {
 
                 return Some(LayoutRun {
                     line_i: self.line_i,
+                    layout_i,
                     text: line.text(),
                     rtl: shape.rtl,
                     glyphs: &layout_line.glyphs,
@@ -169,27 +164,16 @@ pub struct Metrics {
 
 impl Metrics {
     /// Create metrics with given font size and line height
-    pub const fn new(font_size: f32, line_height: f32) -> Self {
-        Self {
-            font_size,
-            line_height,
-        }
-    }
+    pub const fn new(font_size: f32, line_height: f32) -> Self { Self { font_size, line_height } }
 
     /// Create metrics with given font size and calculate line height using relative scale
     pub fn relative(font_size: f32, line_height_scale: f32) -> Self {
-        Self {
-            font_size,
-            line_height: font_size * line_height_scale,
-        }
+        Self { font_size, line_height: font_size * line_height_scale }
     }
 
     /// Scale font size and line height
     pub fn scale(self, scale: f32) -> Self {
-        Self {
-            font_size: self.font_size * scale,
-            line_height: self.line_height * scale,
-        }
+        Self { font_size: self.font_size * scale, line_height: self.line_height * scale }
     }
 }
 
@@ -274,10 +258,7 @@ impl Buffer {
         &'a mut self,
         font_system: &'a mut FontSystem,
     ) -> BorrowedWithFontSystem<'a, Buffer> {
-        BorrowedWithFontSystem {
-            inner: self,
-            font_system,
-        }
+        BorrowedWithFontSystem { inner: self, font_system }
     }
 
     fn relayout(&mut self, font_system: &mut FontSystem) {
@@ -314,9 +295,8 @@ impl Buffer {
         let metrics = self.metrics;
         let old_scroll = self.scroll;
 
-        let layout_cursor = self
-            .layout_cursor(font_system, cursor)
-            .expect("shape_until_cursor invalid cursor");
+        let layout_cursor =
+            self.layout_cursor(font_system, cursor).expect("shape_until_cursor invalid cursor");
 
         let mut layout_y = 0.0;
         let mut total_height = {
@@ -324,14 +304,9 @@ impl Buffer {
                 .line_layout(font_system, layout_cursor.line)
                 .expect("shape_until_cursor failed to scroll forwards");
             for layout_i in 0..layout_cursor.layout {
-                layout_y += layout[layout_i]
-                    .line_height_opt
-                    .unwrap_or(metrics.line_height);
+                layout_y += layout[layout_i].line_height_opt.unwrap_or(metrics.line_height);
             }
-            layout_y
-                + layout[layout_cursor.layout]
-                    .line_height_opt
-                    .unwrap_or(metrics.line_height)
+            layout_y + layout[layout_cursor.layout].line_height_opt.unwrap_or(metrics.line_height)
         };
 
         if self.scroll.line > layout_cursor.line
@@ -452,9 +427,8 @@ impl Buffer {
                 }
 
                 let mut layout_height = 0.0;
-                let layout = self
-                    .line_layout(font_system, line_i)
-                    .expect("shape_until_scroll invalid line");
+                let layout =
+                    self.line_layout(font_system, line_i).expect("shape_until_scroll invalid line");
                 for layout_line in layout.iter() {
                     let line_height = layout_line.line_height_opt.unwrap_or(metrics.line_height);
                     layout_height += line_height;
@@ -543,9 +517,7 @@ impl Buffer {
     }
 
     /// Get the current [`Metrics`]
-    pub fn metrics(&self) -> Metrics {
-        self.metrics
-    }
+    pub fn metrics(&self) -> Metrics { self.metrics }
 
     /// Set the current [`Metrics`]
     ///
@@ -557,9 +529,7 @@ impl Buffer {
     }
 
     /// Get the current [`Wrap`]
-    pub fn wrap(&self) -> Wrap {
-        self.wrap
-    }
+    pub fn wrap(&self) -> Wrap { self.wrap }
 
     /// Set the current [`Wrap`]
     pub fn set_wrap(&mut self, font_system: &mut FontSystem, wrap: Wrap) {
@@ -571,9 +541,7 @@ impl Buffer {
     }
 
     /// Get the current `monospace_width`
-    pub fn monospace_width(&self) -> Option<f32> {
-        self.monospace_width
-    }
+    pub fn monospace_width(&self) -> Option<f32> { self.monospace_width }
 
     /// Set monospace width monospace glyphs should be resized to match. `None` means don't resize
     pub fn set_monospace_width(
@@ -589,9 +557,7 @@ impl Buffer {
     }
 
     /// Get the current `tab_width`
-    pub fn tab_width(&self) -> u16 {
-        self.tab_width
-    }
+    pub fn tab_width(&self) -> u16 { self.tab_width }
 
     /// Set tab width (number of spaces between tab stops)
     pub fn set_tab_width(&mut self, font_system: &mut FontSystem, tab_width: u16) {
@@ -615,9 +581,7 @@ impl Buffer {
     }
 
     /// Get the current buffer dimensions (width, height)
-    pub fn size(&self) -> (Option<f32>, Option<f32>) {
-        (self.width_opt, self.height_opt)
-    }
+    pub fn size(&self) -> (Option<f32>, Option<f32>) { (self.width_opt, self.height_opt) }
 
     /// Set the current buffer dimensions
     pub fn set_size(
@@ -658,9 +622,7 @@ impl Buffer {
     }
 
     /// Get the current scroll location
-    pub fn scroll(&self) -> Scroll {
-        self.scroll
-    }
+    pub fn scroll(&self) -> Scroll { self.scroll }
 
     /// Set the current scroll location
     pub fn set_scroll(&mut self, scroll: Scroll) {
@@ -680,12 +642,7 @@ impl Buffer {
     ) {
         self.lines.clear();
         for (range, ending) in LineIter::new(text) {
-            self.lines.push(BufferLine::new(
-                &text[range],
-                ending,
-                AttrsList::new(attrs),
-                shaping,
-            ));
+            self.lines.push(BufferLine::new(&text[range], ending, AttrsList::new(attrs), shaping));
         }
         if self.lines.is_empty() {
             self.lines.push(BufferLine::new(
@@ -759,11 +716,8 @@ impl Buffer {
             .map(BufferLine::reclaim_attrs)
             .unwrap_or_else(|| AttrsList::new(Attrs::new()))
             .reset(default_attrs);
-        let mut line_string = self
-            .lines
-            .get_mut(line_count)
-            .map(BufferLine::reclaim_text)
-            .unwrap_or_default();
+        let mut line_string =
+            self.lines.get_mut(line_count).map(BufferLine::reclaim_text).unwrap_or_default();
 
         loop {
             let (Some(line_range), Some((attrs, span_range))) = (&maybe_line, &maybe_span) else {
@@ -854,19 +808,13 @@ impl Buffer {
     }
 
     /// True if a redraw is needed
-    pub fn redraw(&self) -> bool {
-        self.redraw
-    }
+    pub fn redraw(&self) -> bool { self.redraw }
 
     /// Set redraw needed flag
-    pub fn set_redraw(&mut self, redraw: bool) {
-        self.redraw = redraw;
-    }
+    pub fn set_redraw(&mut self, redraw: bool) { self.redraw = redraw; }
 
     /// Get the visible layout runs for rendering and other tasks
-    pub fn layout_runs(&self) -> LayoutRunIter {
-        LayoutRunIter::new(self)
-    }
+    pub fn layout_runs(&self) -> LayoutRunIter { LayoutRunIter::new(self) }
 
     /// Convert x, y position to Cursor (hit detection)
     pub fn hit(&self, x: f32, y: f32) -> Option<Cursor> {
@@ -1047,9 +995,7 @@ impl Buffer {
                 cursor_x_opt = None;
             }
             Motion::Left => {
-                let rtl_opt = self
-                    .line_shape(font_system, cursor.line)
-                    .map(|shape| shape.rtl);
+                let rtl_opt = self.line_shape(font_system, cursor.line).map(|shape| shape.rtl);
                 if let Some(rtl) = rtl_opt {
                     if rtl {
                         (cursor, cursor_x_opt) =
@@ -1065,9 +1011,7 @@ impl Buffer {
                 }
             }
             Motion::Right => {
-                let rtl_opt = self
-                    .line_shape(font_system, cursor.line)
-                    .map(|shape| shape.rtl);
+                let rtl_opt = self.line_shape(font_system, cursor.line).map(|shape| shape.rtl);
                 if let Some(rtl) = rtl_opt {
                     if rtl {
                         (cursor, cursor_x_opt) = self.cursor_motion(
@@ -1259,9 +1203,7 @@ impl Buffer {
                 cursor_x_opt = None;
             }
             Motion::LeftWord => {
-                let rtl_opt = self
-                    .line_shape(font_system, cursor.line)
-                    .map(|shape| shape.rtl);
+                let rtl_opt = self.line_shape(font_system, cursor.line).map(|shape| shape.rtl);
                 if let Some(rtl) = rtl_opt {
                     if rtl {
                         (cursor, cursor_x_opt) = self.cursor_motion(
@@ -1281,9 +1223,7 @@ impl Buffer {
                 }
             }
             Motion::RightWord => {
-                let rtl_opt = self
-                    .line_shape(font_system, cursor.line)
-                    .map(|shape| shape.rtl);
+                let rtl_opt = self.line_shape(font_system, cursor.line).map(|shape| shape.rtl);
                 if let Some(rtl) = rtl_opt {
                     if rtl {
                         (cursor, cursor_x_opt) = self.cursor_motion(
@@ -1368,8 +1308,7 @@ impl Buffer {
 impl<'a> BorrowedWithFontSystem<'a, Buffer> {
     /// Shape lines until cursor, also scrolling to include cursor in view
     pub fn shape_until_cursor(&mut self, cursor: Cursor, prune: bool) {
-        self.inner
-            .shape_until_cursor(self.font_system, cursor, prune);
+        self.inner.shape_until_cursor(self.font_system, cursor, prune);
     }
 
     /// Shape lines until scroll
@@ -1397,9 +1336,7 @@ impl<'a> BorrowedWithFontSystem<'a, Buffer> {
     }
 
     /// Set the current [`Wrap`]
-    pub fn set_wrap(&mut self, wrap: Wrap) {
-        self.inner.set_wrap(self.font_system, wrap);
-    }
+    pub fn set_wrap(&mut self, wrap: Wrap) { self.inner.set_wrap(self.font_system, wrap); }
 
     /// Set the current buffer dimensions
     pub fn set_size(&mut self, width_opt: Option<f32>, height_opt: Option<f32>) {
@@ -1417,8 +1354,7 @@ impl<'a> BorrowedWithFontSystem<'a, Buffer> {
         width_opt: Option<f32>,
         height_opt: Option<f32>,
     ) {
-        self.inner
-            .set_metrics_and_size(self.font_system, metrics, width_opt, height_opt);
+        self.inner.set_metrics_and_size(self.font_system, metrics, width_opt, height_opt);
     }
 
     /// Set tab width (number of spaces between tab stops)
@@ -1458,8 +1394,7 @@ impl<'a> BorrowedWithFontSystem<'a, Buffer> {
     ) where
         I: IntoIterator<Item = (&'s str, Attrs<'r>)>,
     {
-        self.inner
-            .set_rich_text(self.font_system, spans, default_attrs, shaping, alignment);
+        self.inner.set_rich_text(self.font_system, spans, default_attrs, shaping, alignment);
     }
 
     /// Apply a [`Motion`] to a [`Cursor`]
@@ -1469,8 +1404,7 @@ impl<'a> BorrowedWithFontSystem<'a, Buffer> {
         cursor_x_opt: Option<i32>,
         motion: Motion,
     ) -> Option<(Cursor, Option<i32>)> {
-        self.inner
-            .cursor_motion(self.font_system, cursor, cursor_x_opt, motion)
+        self.inner.cursor_motion(self.font_system, cursor, cursor_x_opt, motion)
     }
 
     /// Draw the buffer
